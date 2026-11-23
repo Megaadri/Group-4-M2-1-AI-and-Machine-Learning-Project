@@ -1,5 +1,12 @@
 using UnityEngine;
 
+public struct NpcEpisodeStats
+{
+    public string NpcName;
+    public float WalkSpeed;
+}
+
+
 public class SimpleNPC : MonoBehaviour
 {
 
@@ -38,5 +45,14 @@ public class SimpleNPC : MonoBehaviour
     public void SetRandomWalkSpeed()
     {
         walkSpeed = Random.Range(1f, 7f);
+    }
+
+    public NpcEpisodeStats GetEpisodeStats()
+    {
+        return new NpcEpisodeStats
+        {
+            NpcName = gameObject.name,
+            WalkSpeed = walkSpeed
+        };
     }
 }

@@ -3,6 +3,22 @@ using Unity.MLAgents;
 using Unity.MLAgents.Sensors;
 using Unity.MLAgents.Actuators;
 
+
+public struct AgentEpisodeStats{
+    public string AgentName;
+    public int StepsToKeyPickup;
+    public bool GotKey;
+    public bool UnlockedDoor;
+    public string DeathCause;
+    public float MinDistanceToDragon;
+    public int StepsNearDragon;
+    public float MinDistanceToKey;
+    public float MinDistanceToDoor;
+    public string PolicyLabel;
+    public float StartDistanceToDoor;
+    public float StartDistanceToDragon;
+}
+
 public class PushAgentEscape : Agent
 {
 
@@ -12,8 +28,19 @@ public class PushAgentEscape : Agent
     private Rigidbody m_AgentRb;
     private DungeonEscapeEnvController m_GameController;
 
-    public override void Initialize()
-    {
+    private const float DragonProximityThreshold = 5f; 
+    private int stepsToKeyPickup;
+    private bool unlockedDoor;
+    private string deathCause;
+    private float minDistanceToDragon = float.MaxValue;
+    private int stepsNearDragon;
+    private float minDistanceToKey = float.MaxValue;
+    private float minDistanceToDoor = float.MaxValue;
+    public string PolicyLabel = "unset";  
+    private float startDistanceToDoor = -1f;
+    private float startDistanceToDragon = float.MaxValue;
+
+    public override void Initialize(){
         m_GameController = GetComponentInParent<DungeonEscapeEnvController>();
         m_AgentRb = GetComponent<Rigidbody>();
         m_PushBlockSettings = FindObjectOfType<PushBlockSettings>();
@@ -25,6 +52,14 @@ public class PushAgentEscape : Agent
     {
         MyKey.SetActive(false);
         IHaveAKey = false;
+
+        stepsToKeyPickup = -1;
+        unlockedDoor = false;
+        deathCause = "none";
+        minDistanceToDragon = float.MaxValue;
+        stepsNearDragon = 0;
+        minDistanceToKey = float.MaxValue;
+        minDistanceToDoor = float.MaxValue;
     }
 
     public override void CollectObservations(VectorSensor sensor)
@@ -85,17 +120,20 @@ public class PushAgentEscape : Agent
             {
                 MyKey.SetActive(false);
                 IHaveAKey = false;
+                unlockedDoor = true;
                 m_GameController.UnlockDoor();
             }
         }
         if (col.transform.CompareTag("dragon"))
         {
+            deathCause = "dragon";
             m_GameController.KilledByBaddie(this, col);
             MyKey.SetActive(false);
             IHaveAKey = false;
         }
         if (col.transform.CompareTag("portal"))
         {
+            deathCause = "hazard";
             m_GameController.TouchedHazard(this);
         }
     }
@@ -108,6 +146,7 @@ public class PushAgentEscape : Agent
             print("Picked up key");
             MyKey.SetActive(true);
             IHaveAKey = true;
+            stepsToKeyPickup = StepCount;
             col.gameObject.SetActive(false);
         }
     }
@@ -132,4 +171,43 @@ public class PushAgentEscape : Agent
             discreteActionsOut[0] = 2;
         }
     }
+
+
+    public void ApproximateStats(float distanceToDragon, float distanceToKey, float distanceToDoor){
+        if (distanceToDragon < minDistanceToDragon){
+            minDistanceToDragon = distanceToDragon;
+        }
+        if (distanceToDragon <= DragonProximityThreshold){
+            stepsNearDragon++;
+        }
+        if (distanceToKey >= 0f && distanceToKey < minDistanceToKey){
+            minDistanceToKey = distanceToKey;
+        }
+        if (distanceToDoor >= 0f && distanceToDoor < minDistanceToDoor){
+            minDistanceToDoor = distanceToDoor;
+        }
+    }
+
+    public void SetSpawnDistances(float toDoor, float toDragon){
+        startDistanceToDoor = toDoor;
+        startDistanceToDragon = toDragon;
+    }
+
+    public AgentEpisodeStats GetEpisodeStats(){
+        return new AgentEpisodeStats{
+            AgentName = gameObject.name,
+            StepsToKeyPickup = stepsToKeyPickup,
+            GotKey = IHaveAKey || stepsToKeyPickup >= 0,
+            UnlockedDoor = unlockedDoor,
+            DeathCause = deathCause,
+            MinDistanceToDragon = minDistanceToDragon,
+            StepsNearDragon = stepsNearDragon,
+            MinDistanceToKey = minDistanceToKey,
+            MinDistanceToDoor = minDistanceToDoor,
+            PolicyLabel = PolicyLabel,
+            StartDistanceToDoor = startDistanceToDoor,
+            StartDistanceToDragon = startDistanceToDragon
+        };
+    }
+
 }

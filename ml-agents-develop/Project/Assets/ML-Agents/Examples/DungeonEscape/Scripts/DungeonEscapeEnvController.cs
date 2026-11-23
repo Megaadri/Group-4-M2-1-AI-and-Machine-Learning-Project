@@ -4,6 +4,7 @@ using Unity.MLAgents;
 using UnityEngine;
 using System;
 using System.IO;
+using Random = UnityEngine.Random;
 
 public class DungeonEscapeEnvController : MonoBehaviour
 {
@@ -70,24 +71,23 @@ public class DungeonEscapeEnvController : MonoBehaviour
 
     private int m_NumberOfRemainingPlayers;
     public GameObject Key;
+    public GameObject Door;
     public GameObject Tombstone;
     private SimpleMultiAgentGroup m_AgentGroup;
 
-
-
+    
     public bool EnableEpisodeLogging = true;
-
+ 
     private string runID;
     private int episodeCount = 0;
-    private double episodeStartTime;
     private string episodeLogPath;
     private string agentLogPath;
     private string npcLogPath;
 
 
-
     void Start()
     {
+        System.Threading.Thread.CurrentThread.CurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
 
         // Get the ground's bounds
         areaBounds = ground.GetComponent<Collider>().bounds;
@@ -123,6 +123,7 @@ public class DungeonEscapeEnvController : MonoBehaviour
         }
 
         Logging();
+
         ResetScene();
     }
 
@@ -139,31 +140,30 @@ public class DungeonEscapeEnvController : MonoBehaviour
         }
     }
 
-    void ApproximateStats()
-    {
-        foreach (var item in AgentsList)
-        {
-            if (!item.Agent.gameObject.activeInHierarchy) continue;
- 
-            float minDragonDistance = float.MaxValue;
-            foreach (var dragon in DragonsList)
-            {
-                if (!dragon.Agent || !dragon.Agent.gameObject.activeInHierarchy) continue;
-                float d = Vector3.Distance(item.Agent.transform.position, dragon.Agent.transform.position);
-                if (d < minDragonDistance) minDragonDist = d;
-            }
- 
-            float keyDistance = (Key != null && Key.activeInHierarchy)
-                ? Vector3.Distance(item.Agent.transform.position, Key.transform.position)
-                : -1f;
- 
-            float doorDistance = (Door != null)
-                ? Vector3.Distance(item.Agent.transform.position, Door.transform.position)
-                : -1f;
- 
-            item.Agent.ApproximateStats(minDragonDistance, keyDistance, doorDistance);
-        }
-    }
+     void ApproximateStats()
+   {
+       if (!EnableEpisodeLogging) return;
+
+       foreach (var item in AgentsList)
+       {
+           if (!item.Agent.gameObject.activeInHierarchy) continue; // skip dead agents
+           Vector3 pos = item.Agent.transform.position;
+
+           float dragonDistance = float.MaxValue; // stays MaxValue if no dragon is active
+           foreach (var d in DragonsList)
+           {
+               if (!d.Agent || !d.Agent.gameObject.activeInHierarchy) continue;
+               dragonDistance = Mathf.Min(dragonDistance, Vector3.Distance(pos, d.Agent.transform.position));
+           }
+
+           float keyDistance = (Key != null && Key.activeInHierarchy)
+               ? Vector3.Distance(pos, Key.transform.position) : -1f;
+           float doorDistance = (Door != null)
+               ? Vector3.Distance(pos, Door.transform.position) : -1f;
+
+           item.Agent.ApproximateStats(dragonDistance, keyDistance, doorDistance);
+       }
+   }
 
     public void TouchedHazard(PushAgentEscape agent)
     {
@@ -194,9 +194,6 @@ public class DungeonEscapeEnvController : MonoBehaviour
 
     public void KilledByBaddie(PushAgentEscape agent, Collision baddieCol)
     {
-        baddieCol.gameObject.GetComponent<SimpleNPC>().RecordKill();
-
-
         baddieCol.gameObject.SetActive(false);
         m_NumberOfRemainingPlayers--;
         agent.gameObject.SetActive(false);
@@ -264,8 +261,6 @@ public class DungeonEscapeEnvController : MonoBehaviour
 
         //Reset counter
         m_ResetTimer = 0;
-        episodeStartTime = Time.realtimeSinceStartup;  
-
 
         //Reset Players Remaining
         m_NumberOfRemainingPlayers = AgentsList.Count;
@@ -307,25 +302,37 @@ public class DungeonEscapeEnvController : MonoBehaviour
             item.Agent.SetRandomWalkSpeed();
             item.Agent.gameObject.SetActive(true);
         }
+
+        foreach (var item in AgentsList){
+            Vector3 p = item.Agent.transform.position;
+            float toDoor = Door != null ? Vector3.Distance(p, Door.transform.position) : -1f;
+            float toDragon = float.MaxValue;
+            foreach (var d in DragonsList){
+                if (!d.Agent) continue;
+                toDragon = Mathf.Min(toDragon, Vector3.Distance(p, d.Agent.transform.position));
+            }
+            item.Agent.SetSpawnDistances(toDoor, toDragon);
+        }
     }
 
-    void Logging()
+     void Logging()
     {
         if (!EnableEpisodeLogging) return;
-
-        runID = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss") + "_" + Guid.NewGuid().ToString("N").Substring(0, 6);
-
+ 
+        runID = Guid.NewGuid().ToString("N").Substring(0, 6);
+ 
         string logDir = Path.Combine(Application.dataPath, "../EpisodeLogs");
         Directory.CreateDirectory(logDir);
-
-       episodeLogPath = Path.Combine(logDir, "episode_log.csv");
+ 
+        episodeLogPath = Path.Combine(logDir, "episode_log.csv");
         agentLogPath = Path.Combine(logDir, "agent_log.csv");
         npcLogPath = Path.Combine(logDir, "npc_log.csv");
  
-        WriteHeaderIfMissing(episodeLogPath, "run_id,episode,end_reason,steps_taken,num_players_start,num_players_remaining,num_dragons,episode_duration");
-        WriteHeaderIfMissing(agentLogPath, "run_id,episode,agent_name,steps_alive,distance_traveled,steps_to_key_pickup,got_key,unlocked_door,death_cause,cumulative_reward,min_distance_to_dragon,steps_near_dragon,min_distance_to_key,min_distance_to_door,last_action");
-        WriteHeaderIfMissing(npcLogPath, "run_id,episode,npc_name,distance_traveled,kill_count,walk_speed");
+        WriteHeaderIfMissing(episodeLogPath, "run_id,episode,end_reason,steps_taken,num_players_start,num_players_remaining,num_dragons");
+        WriteHeaderIfMissing(agentLogPath, "run_id,episode,agent_name,policy_label,start_distance_to_door,start_distance_to_dragon,steps_to_key_pickup,got_key,unlocked_door,death_cause,min_distance_to_dragon,steps_near_dragon,min_distance_to_key,min_distance_to_door");        
+        WriteHeaderIfMissing(npcLogPath, "run_id,episode,npc_name,walk_speed");
     }
+ 
 
     void WriteHeaderIfMissing(string path, string header)
     {
@@ -334,45 +341,40 @@ public class DungeonEscapeEnvController : MonoBehaviour
             File.AppendAllText(path, header + "\n");
         }
     }
-
+ 
     string FormatMaybeUnset(float value)
     {
         return value >= float.MaxValue ? "-1" : value.ToString("F2");
     }
-
-    void LogEpisode(string reason){
+ 
+    void LogEpisode(string reason)
+    {
         if (!EnableEpisodeLogging) return;
-
+ 
         episodeCount++;
-
-        double episodeDurationSeconds = Time.realtimeSinceStartup - episodeStartTime;
-
+  
         File.AppendAllText(episodeLogPath, string.Join(",",
             runID, episodeCount, reason, m_ResetTimer,
-            AgentsList.Count, m_NumberOfRemainingPlayers, DragonsList.Count,
-            episodeDurationSeconds.ToString("F2")) + "\n");
- 
+            AgentsList.Count, m_NumberOfRemainingPlayers, DragonsList.Count) + "\n");
+
         foreach (var item in AgentsList)
         {
             var s = item.Agent.GetEpisodeStats();
             File.AppendAllText(agentLogPath, string.Join(",",
-                runID, episodeCount, s.AgentName, s.StepsAlive,
-                s.DistanceTraveled.ToString("F3"), s.StepsToKeyPickup,
-                s.GotKey, s.UnlockedDoor, s.DeathCause,
-                s.CumulativeReward.ToString("F3"),
+                runID, episodeCount, s.AgentName, s.PolicyLabel,
+                FormatMaybeUnset(s.StartDistanceToDoor), FormatMaybeUnset(s.StartDistanceToDragon),
+                s.StepsToKeyPickup, s.GotKey, s.UnlockedDoor, s.DeathCause,
                 FormatMaybeUnset(s.MinDistanceToDragon), s.StepsNearDragon,
-                FormatMaybeUnset(s.MinDistanceToKey), FormatMaybeUnset(s.MinDistanceToDoor),
-                s.LastAction) + "\n");
+                FormatMaybeUnset(s.MinDistanceToKey), FormatMaybeUnset(s.MinDistanceToDoor)) + "\n");
         }
- 
+
         foreach (var item in DragonsList)
         {
             if (!item.Agent) continue;
             var s = item.Agent.GetEpisodeStats();
             File.AppendAllText(npcLogPath, string.Join(",",
-                runID, episodeCount, s.NpcName,
-                s.DistanceTraveled.ToString("F3"), s.KillCount,
-                s.WalkSpeed.ToString("F3")) + "\n");
+                runID, episodeCount, s.NpcName, s.WalkSpeed.ToString("F3")) + "\n");
         }
     }
 }
+ 
