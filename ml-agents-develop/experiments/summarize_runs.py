@@ -1,10 +1,3 @@
-#!/usr/bin/env python3
-"""
-Usage:
-  python summarize_runs.py
-  python summarize_runs.py --episode episode_log.csv --agent agent_log.csv \
-                           --npc npc_log.csv --out run_summary.csv
-"""
 import argparse
 import pandas as pd
 
